@@ -138,7 +138,12 @@ function createManagedEvent(calendar, title, startTime, endTime, description, co
   const event = calendar.createEvent(title, startTime, endTime, {
     description: description,
   });
-  event.setColor(color || CalendarApp.EventColor.MAUVE);
+  const chosen = color || CalendarApp.EventColor.MAUVE;
+  try {
+    event.setColor(String(chosen));
+  } catch (e) {
+    Logger.log(`Failed to set color on "${title}" (color=${chosen}): ${e.message}`);
+  }
   event.removeAllReminders();
   Logger.log(`Created: ${title} (${startTime.toLocaleString()} - ${endTime.toLocaleString()})`);
   return event;
@@ -165,9 +170,13 @@ function updateManagedEvent(event, title, startTime, endTime, description, color
     event.setDescription(description);
     changed = true;
   }
-  if (color && event.getColor() !== color) {
-    event.setColor(color);
-    changed = true;
+  if (color && String(color) !== String(event.getColor())) {
+    try {
+      event.setColor(String(color));
+      changed = true;
+    } catch (e) {
+      Logger.log(`Skipping color update for "${title}" (color=${color}): ${e.message}`);
+    }
   }
 
   if (changed) {
@@ -197,34 +206,38 @@ function cleanupOrphanedEvents(managedEvents, processedSourceIds, types) {
 // ---------------------------------------------------------------------------
 
 /**
- * Approximate hex values for the 11 per-event colors Apps Script exposes
- * via CalendarApp.EventColor. Used to find the closest event color to an
- * arbitrary calendar hex color (Calendar.getColor() returns hex from a
- * wider 24-color palette).
+ * Per-event color palette: the 11 named colors Apps Script exposes via
+ * event.setColor(). Stored as [enumValue, hex] pairs so iteration order
+ * is stable and we don't rely on object-key coercion of enum values
+ * (which behaves inconsistently between runtimes).
+ *
+ * Hex values are the modern Google Calendar named-color palette
+ * (Lavender, Sage, Grape, ...).
  */
-function getEventColorHexMap_() {
-  const m = {};
-  m[CalendarApp.EventColor.PALE_BLUE] = '#7986cb';  // Lavender
-  m[CalendarApp.EventColor.PALE_GREEN] = '#33b679'; // Sage
-  m[CalendarApp.EventColor.MAUVE] = '#8e24aa';      // Grape
-  m[CalendarApp.EventColor.PALE_RED] = '#e67c73';   // Flamingo
-  m[CalendarApp.EventColor.YELLOW] = '#f6bf26';     // Banana
-  m[CalendarApp.EventColor.ORANGE] = '#f4511e';     // Tangerine
-  m[CalendarApp.EventColor.CYAN] = '#039be5';       // Peacock
-  m[CalendarApp.EventColor.GRAY] = '#616161';       // Graphite
-  m[CalendarApp.EventColor.BLUE] = '#3f51b5';       // Blueberry
-  m[CalendarApp.EventColor.GREEN] = '#0b8043';      // Basil
-  m[CalendarApp.EventColor.RED] = '#d50000';        // Tomato
-  return m;
+function getEventColorPalette_() {
+  return [
+    [CalendarApp.EventColor.PALE_BLUE, '#7986cb'],  // Lavender
+    [CalendarApp.EventColor.PALE_GREEN, '#33b679'], // Sage
+    [CalendarApp.EventColor.MAUVE, '#8e24aa'],      // Grape
+    [CalendarApp.EventColor.PALE_RED, '#e67c73'],   // Flamingo
+    [CalendarApp.EventColor.YELLOW, '#f6bf26'],     // Banana
+    [CalendarApp.EventColor.ORANGE, '#f4511e'],     // Tangerine
+    [CalendarApp.EventColor.CYAN, '#039be5'],       // Peacock
+    [CalendarApp.EventColor.GRAY, '#616161'],       // Graphite
+    [CalendarApp.EventColor.BLUE, '#3f51b5'],       // Blueberry
+    [CalendarApp.EventColor.GREEN, '#0b8043'],      // Basil
+    [CalendarApp.EventColor.RED, '#d50000'],        // Tomato
+  ];
 }
 
 function hexToRgb_(hex) {
-  const h = hex.replace('#', '').trim();
-  return {
-    r: parseInt(h.substring(0, 2), 16),
-    g: parseInt(h.substring(2, 4), 16),
-    b: parseInt(h.substring(4, 6), 16),
-  };
+  const h = String(hex || '').replace('#', '').trim();
+  if (h.length < 6) return null;
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+  return { r: r, g: g, b: b };
 }
 
 /**
@@ -232,27 +245,21 @@ function hexToRgb_(hex) {
  * simple RGB-distance match. Falls back to GRAY on parse failure.
  */
 function closestEventColor(hex) {
-  if (!hex || typeof hex !== 'string' || hex.length < 7) {
-    return CalendarApp.EventColor.GRAY;
-  }
+  const target = hexToRgb_(hex);
+  const palette = getEventColorPalette_();
+  if (!target) return CalendarApp.EventColor.GRAY;
 
-  let target;
-  try {
-    target = hexToRgb_(hex);
-  } catch (e) {
-    return CalendarApp.EventColor.GRAY;
-  }
-
-  const map = getEventColorHexMap_();
   let bestId = CalendarApp.EventColor.GRAY;
   let bestDist = Infinity;
 
-  for (const id in map) {
-    const c = hexToRgb_(map[id]);
-    const dist =
-      (c.r - target.r) * (c.r - target.r) +
-      (c.g - target.g) * (c.g - target.g) +
-      (c.b - target.b) * (c.b - target.b);
+  for (let i = 0; i < palette.length; i++) {
+    const id = palette[i][0];
+    const c = hexToRgb_(palette[i][1]);
+    if (!c) continue;
+    const dr = c.r - target.r;
+    const dg = c.g - target.g;
+    const db = c.b - target.b;
+    const dist = dr * dr + dg * dg + db * db;
     if (dist < bestDist) {
       bestDist = dist;
       bestId = id;
