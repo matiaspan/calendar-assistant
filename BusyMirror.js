@@ -73,7 +73,8 @@ function processExternalCalendars(
     // processDriveTimeBlocks run its own cleanup if we successfully fetched
     // events for this calendar (we did, if we got here).
     try {
-      const externalManaged = getManagedEvents(extCal, startDate, endDate);
+      let externalManaged = getManagedEvents(extCal, startDate, endDate);
+      externalManaged = dedupeManagedEvents(externalManaged, ['drive-to', 'drive-from']);
       const { drive: externalDriveManaged } = categorizeManagedEvents(externalManaged);
       processDriveTimeBlocks(extCal, externalEvents, externalDriveManaged, config);
     } catch (e) {

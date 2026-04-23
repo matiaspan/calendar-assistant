@@ -29,8 +29,29 @@ function getConfig() {
 
 /**
  * Main entry point — called by the time-driven trigger.
+ *
+ * Guarded by a script-wide lock so a manual editor run and a scheduled
+ * trigger invocation can't race each other. Apps Script does NOT serialize
+ * concurrent trigger/editor executions by default, and when both runs
+ * interleave they each see the same old state, each create a fresh set of
+ * managed blocks, and nothing in the normal cleanup path recognizes the
+ * extras as orphaned (same tag source on both copies).
  */
 function main() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(0)) {
+    Logger.log('Another main() is already running. Skipping this invocation.');
+    return;
+  }
+
+  try {
+    runMain();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function runMain() {
   const config = getConfig();
 
   if (!config.OFFICE_ADDRESS) {
@@ -46,7 +67,17 @@ function main() {
   Logger.log(`Scanning ${calendar.getName()} from ${now.toLocaleString()} to ${endDate.toLocaleString()}`);
 
   const sourceEvents = getSourceEvents(calendar, now, endDate);
-  const managedEvents = getManagedEvents(calendar, now, endDate);
+  let managedEvents = getManagedEvents(calendar, now, endDate);
+
+  // Remove any duplicate managed events that an earlier concurrent run
+  // left behind (same tag source appearing more than once per type).
+  managedEvents = dedupeManagedEvents(managedEvents, [
+    'drive-to',
+    'drive-from',
+    'buffer',
+    'busy-mirror',
+  ]);
+
   const { drive, buffer, busyMirror } = categorizeManagedEvents(managedEvents);
 
   const externalCalendarIds = (config.SOURCE_CALENDAR_IDS || '')

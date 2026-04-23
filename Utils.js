@@ -202,6 +202,42 @@ function updateManagedEvent(event, title, startTime, endTime, description, color
 }
 
 /**
+ * Remove duplicate managed events that share the same (type, source).
+ *
+ * Duplicates happen when two main() runs race (e.g. a time-driven trigger
+ * fires mid-way through a manual editor run): both see the same old state,
+ * both create new managed blocks with the same tag source, and nothing in
+ * the normal cleanup path would ever identify the extras as orphaned.
+ *
+ * Returns the input list filtered to one canonical event per (type, source),
+ * with the surplus deleted from the calendar.
+ */
+function dedupeManagedEvents(managedEvents, types) {
+  const seen = {};
+  const kept = [];
+  for (const event of managedEvents) {
+    const tag = parseTag(event.getDescription());
+    if (!tag || !types.includes(tag.type)) {
+      kept.push(event);
+      continue;
+    }
+    const key = tag.type + '::' + tag.source;
+    if (seen[key]) {
+      try {
+        Logger.log(`Deleting duplicate managed event: ${event.getTitle()}`);
+        event.deleteEvent();
+      } catch (e) {
+        Logger.log(`Failed to delete duplicate (${event.getTitle()}): ${e.message}`);
+      }
+    } else {
+      seen[key] = true;
+      kept.push(event);
+    }
+  }
+  return kept;
+}
+
+/**
  * Delete managed events whose source no longer exists.
  */
 function cleanupOrphanedEvents(managedEvents, processedSourceIds, types) {
