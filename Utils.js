@@ -91,11 +91,12 @@ function getManagedEvents(calendar, startDate, endDate) {
 }
 
 /**
- * Split managed events into {drive: [], buffer: []} by type.
+ * Split managed events into {drive: [], buffer: [], busyMirror: []} by type.
  */
 function categorizeManagedEvents(managedEvents) {
   const drive = [];
   const buffer = [];
+  const busyMirror = [];
 
   for (const event of managedEvents) {
     const tag = parseTag(event.getDescription());
@@ -105,10 +106,12 @@ function categorizeManagedEvents(managedEvents) {
       drive.push(event);
     } else if (tag.type === 'buffer') {
       buffer.push(event);
+    } else if (tag.type === 'busy-mirror') {
+      busyMirror.push(event);
     }
   }
 
-  return { drive, buffer };
+  return { drive, buffer, busyMirror };
 }
 
 // ---------------------------------------------------------------------------
