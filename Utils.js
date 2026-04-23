@@ -147,7 +147,7 @@ function createManagedEvent(calendar, title, startTime, endTime, description, co
 /**
  * Update an existing managed event if anything changed.
  */
-function updateManagedEvent(event, title, startTime, endTime, description) {
+function updateManagedEvent(event, title, startTime, endTime, description, color) {
   let changed = false;
 
   if (event.getTitle() !== title) {
@@ -163,6 +163,10 @@ function updateManagedEvent(event, title, startTime, endTime, description) {
   }
   if (event.getDescription() !== description) {
     event.setDescription(description);
+    changed = true;
+  }
+  if (color && event.getColor() !== color) {
+    event.setColor(color);
     changed = true;
   }
 
@@ -186,6 +190,76 @@ function cleanupOrphanedEvents(managedEvents, processedSourceIds, types) {
       Logger.log(`Skipping already-deleted event: ${e.message}`);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Color helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Approximate hex values for the 11 per-event colors Apps Script exposes
+ * via CalendarApp.EventColor. Used to find the closest event color to an
+ * arbitrary calendar hex color (Calendar.getColor() returns hex from a
+ * wider 24-color palette).
+ */
+function getEventColorHexMap_() {
+  const m = {};
+  m[CalendarApp.EventColor.PALE_BLUE] = '#7986cb';  // Lavender
+  m[CalendarApp.EventColor.PALE_GREEN] = '#33b679'; // Sage
+  m[CalendarApp.EventColor.MAUVE] = '#8e24aa';      // Grape
+  m[CalendarApp.EventColor.PALE_RED] = '#e67c73';   // Flamingo
+  m[CalendarApp.EventColor.YELLOW] = '#f6bf26';     // Banana
+  m[CalendarApp.EventColor.ORANGE] = '#f4511e';     // Tangerine
+  m[CalendarApp.EventColor.CYAN] = '#039be5';       // Peacock
+  m[CalendarApp.EventColor.GRAY] = '#616161';       // Graphite
+  m[CalendarApp.EventColor.BLUE] = '#3f51b5';       // Blueberry
+  m[CalendarApp.EventColor.GREEN] = '#0b8043';      // Basil
+  m[CalendarApp.EventColor.RED] = '#d50000';        // Tomato
+  return m;
+}
+
+function hexToRgb_(hex) {
+  const h = hex.replace('#', '').trim();
+  return {
+    r: parseInt(h.substring(0, 2), 16),
+    g: parseInt(h.substring(2, 4), 16),
+    b: parseInt(h.substring(4, 6), 16),
+  };
+}
+
+/**
+ * Return the CalendarApp.EventColor closest to the given hex color by
+ * simple RGB-distance match. Falls back to GRAY on parse failure.
+ */
+function closestEventColor(hex) {
+  if (!hex || typeof hex !== 'string' || hex.length < 7) {
+    return CalendarApp.EventColor.GRAY;
+  }
+
+  let target;
+  try {
+    target = hexToRgb_(hex);
+  } catch (e) {
+    return CalendarApp.EventColor.GRAY;
+  }
+
+  const map = getEventColorHexMap_();
+  let bestId = CalendarApp.EventColor.GRAY;
+  let bestDist = Infinity;
+
+  for (const id in map) {
+    const c = hexToRgb_(map[id]);
+    const dist =
+      (c.r - target.r) * (c.r - target.r) +
+      (c.g - target.g) * (c.g - target.g) +
+      (c.b - target.b) * (c.b - target.b);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestId = id;
+    }
+  }
+
+  return bestId;
 }
 
 // ---------------------------------------------------------------------------

@@ -47,7 +47,11 @@ function processExternalCalendars(
     const externalEvents = extCal
       .getEvents(startDate, endDate)
       .filter((e) => !e.isAllDayEvent() && !isManagedEvent(e));
-    Logger.log(`  External ${extCal.getName()}: ${externalEvents.length} events`);
+    const mirrorColor = closestEventColor(extCal.getColor());
+    Logger.log(
+      `  External ${extCal.getName()}: ${externalEvents.length} events, ` +
+        `mirror color ${mirrorColor} (from ${extCal.getColor()})`
+    );
 
     // Step 1: drive blocks on the external calendar itself.
     try {
@@ -94,7 +98,7 @@ function processExternalCalendars(
       const existing = findManagedEvent(busyMirrorManagedEvents, 'busy-mirror', sourceId);
 
       if (existing) {
-        updateManagedEvent(existing, 'Busy', mirrorStart, mirrorEnd, description);
+        updateManagedEvent(existing, 'Busy', mirrorStart, mirrorEnd, description, mirrorColor);
       } else {
         createManagedEvent(
           workCalendar,
@@ -102,7 +106,7 @@ function processExternalCalendars(
           mirrorStart,
           mirrorEnd,
           description,
-          CalendarApp.EventColor.GRAY
+          mirrorColor
         );
       }
     }
