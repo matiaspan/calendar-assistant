@@ -31,86 +31,118 @@ function processExternalCalendars(
   const processedMirrorSourceIds = {};
   const bufferPercent = parseInt(config.DRIVE_TIME_BUFFER_PERCENT, 10);
 
+  // Track whether every configured external calendar fetched cleanly.
+  // If any transient failure (calendar inaccessible, getEvents throws, etc.)
+  // skipped a calendar, we skip the busy-mirror cleanup at the end — otherwise
+  // every mirror event would be treated as orphaned and deleted.
+  let allCalendarsFetchedOk = true;
+
   for (const id of externalCalendarIds) {
     let extCal;
     try {
       extCal = CalendarApp.getCalendarById(id);
     } catch (e) {
       Logger.log(`Error accessing external calendar ${id}: ${e.message}`);
+      allCalendarsFetchedOk = false;
       continue;
     }
     if (!extCal) {
       Logger.log(`External calendar not accessible: ${id}`);
+      allCalendarsFetchedOk = false;
       continue;
     }
 
-    const externalEvents = extCal
-      .getEvents(startDate, endDate)
-      .filter((e) => !e.isAllDayEvent() && !isManagedEvent(e));
+    let externalEvents;
+    try {
+      externalEvents = extCal
+        .getEvents(startDate, endDate)
+        .filter((e) => !e.isAllDayEvent() && !isManagedEvent(e));
+    } catch (e) {
+      Logger.log(`Failed to fetch events from ${extCal.getName()}: ${e.message}`);
+      allCalendarsFetchedOk = false;
+      continue;
+    }
+
     const mirrorColor = closestEventColor(extCal.getColor());
     Logger.log(
       `  External ${extCal.getName()}: ${externalEvents.length} events, ` +
         `mirror color ${mirrorColor} (from ${extCal.getColor()})`
     );
 
-    // Step 1: drive blocks on the external calendar itself.
+    // Step 1: drive blocks on the external calendar itself. Only let
+    // processDriveTimeBlocks run its own cleanup if we successfully fetched
+    // events for this calendar (we did, if we got here).
     try {
-      const externalManaged = getManagedEvents(extCal, startDate, endDate);
+      let externalManaged = getManagedEvents(extCal, startDate, endDate);
+      externalManaged = dedupeManagedEvents(externalManaged, ['drive-to', 'drive-from']);
       const { drive: externalDriveManaged } = categorizeManagedEvents(externalManaged);
       processDriveTimeBlocks(extCal, externalEvents, externalDriveManaged, config);
     } catch (e) {
       Logger.log(`Failed to manage drive blocks on ${id} (is it writable?): ${e.message}`);
+      allCalendarsFetchedOk = false;
     }
 
     // Step 2: expanded "Busy" mirror on the work calendar.
     for (const event of externalEvents) {
-      const sourceId = event.getId();
-      processedMirrorSourceIds[sourceId] = true;
+      try {
+        const sourceId = getEventInstanceId(event);
+        processedMirrorSourceIds[sourceId] = true;
 
-      const eventStart = event.getStartTime();
-      const eventEnd = event.getEndTime();
-      const location = event.getLocation();
+        const eventStart = event.getStartTime();
+        const eventEnd = event.getEndTime();
+        const location = event.getLocation();
 
-      let mirrorStart = eventStart;
-      let mirrorEnd = eventEnd;
-      let driveMs = 0;
+        let mirrorStart = eventStart;
+        let mirrorEnd = eventEnd;
+        let driveMs = 0;
 
-      if (location && location.trim().length > 0) {
-        const driveMinutes = getDriveTimeMinutes(
-          config.OFFICE_ADDRESS,
-          location,
-          eventStart,
-          bufferPercent
-        );
-        if (driveMinutes !== null) {
-          driveMs = minutesToMs(driveMinutes);
-          mirrorStart = new Date(eventStart.getTime() - driveMs);
-          mirrorEnd = new Date(eventEnd.getTime() + driveMs);
+        if (location && location.trim().length > 0) {
+          const driveMinutes = getDriveTimeMinutes(
+            config.OFFICE_ADDRESS,
+            location,
+            eventStart,
+            bufferPercent
+          );
+          if (driveMinutes !== null) {
+            driveMs = minutesToMs(driveMinutes);
+            mirrorStart = new Date(eventStart.getTime() - driveMs);
+            mirrorEnd = new Date(eventEnd.getTime() + driveMs);
+          }
         }
-      }
 
-      const metadata = {
-        eventStart: String(eventStart.getTime()),
-        eventEnd: String(eventEnd.getTime()),
-        driveMs: String(driveMs),
-      };
-      const description = createTag('busy-mirror', sourceId, metadata);
-      const existing = findManagedEvent(busyMirrorManagedEvents, 'busy-mirror', sourceId);
+        const metadata = {
+          eventStart: String(eventStart.getTime()),
+          eventEnd: String(eventEnd.getTime()),
+          driveMs: String(driveMs),
+        };
+        const description = createTag('busy-mirror', sourceId, metadata);
+        const existing = findManagedEvent(busyMirrorManagedEvents, 'busy-mirror', sourceId);
 
-      if (existing) {
-        updateManagedEvent(existing, 'Busy', mirrorStart, mirrorEnd, description, mirrorColor);
-      } else {
-        createManagedEvent(
-          workCalendar,
-          'Busy',
-          mirrorStart,
-          mirrorEnd,
-          description,
-          mirrorColor
-        );
+        if (existing) {
+          updateManagedEvent(existing, 'Busy', mirrorStart, mirrorEnd, description, mirrorColor);
+        } else {
+          createManagedEvent(
+            workCalendar,
+            'Busy',
+            mirrorStart,
+            mirrorEnd,
+            description,
+            mirrorColor
+          );
+        }
+      } catch (e) {
+        Logger.log(`Error mirroring external event: ${e.message}`);
+        allCalendarsFetchedOk = false;
       }
     }
   }
 
-  cleanupOrphanedEvents(busyMirrorManagedEvents, processedMirrorSourceIds, ['busy-mirror']);
+  if (allCalendarsFetchedOk) {
+    cleanupOrphanedEvents(busyMirrorManagedEvents, processedMirrorSourceIds, ['busy-mirror']);
+  } else {
+    Logger.log(
+      'Skipping busy-mirror cleanup: at least one external calendar had a fetch error. ' +
+        'Stale mirrors will be cleaned up on a subsequent successful run.'
+    );
+  }
 }

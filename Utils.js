@@ -50,6 +50,23 @@ function isManagedEvent(event) {
   return parseTag(event.getDescription()) !== null;
 }
 
+/**
+ * Unique per-instance ID for a calendar event.
+ *
+ * event.getId() returns the iCalUID, which is the SAME across every
+ * instance of a recurring event. Using it alone as a managed-event
+ * source key causes every instance of a recurring series to share one
+ * drive block / busy mirror — each iteration of the main loop overwrites
+ * the previous instance's block, so only the last instance ends up with
+ * any managed blocks at all.
+ *
+ * Appending the instance start time makes each occurrence addressable
+ * on its own.
+ */
+function getEventInstanceId(event) {
+  return event.getId() + '_' + event.getStartTime().getTime();
+}
+
 // ---------------------------------------------------------------------------
 // Event filtering
 // ---------------------------------------------------------------------------
@@ -182,6 +199,42 @@ function updateManagedEvent(event, title, startTime, endTime, description, color
   if (changed) {
     Logger.log(`Updated: ${title}`);
   }
+}
+
+/**
+ * Remove duplicate managed events that share the same (type, source).
+ *
+ * Duplicates happen when two main() runs race (e.g. a time-driven trigger
+ * fires mid-way through a manual editor run): both see the same old state,
+ * both create new managed blocks with the same tag source, and nothing in
+ * the normal cleanup path would ever identify the extras as orphaned.
+ *
+ * Returns the input list filtered to one canonical event per (type, source),
+ * with the surplus deleted from the calendar.
+ */
+function dedupeManagedEvents(managedEvents, types) {
+  const seen = {};
+  const kept = [];
+  for (const event of managedEvents) {
+    const tag = parseTag(event.getDescription());
+    if (!tag || !types.includes(tag.type)) {
+      kept.push(event);
+      continue;
+    }
+    const key = tag.type + '::' + tag.source;
+    if (seen[key]) {
+      try {
+        Logger.log(`Deleting duplicate managed event: ${event.getTitle()}`);
+        event.deleteEvent();
+      } catch (e) {
+        Logger.log(`Failed to delete duplicate (${event.getTitle()}): ${e.message}`);
+      }
+    } else {
+      seen[key] = true;
+      kept.push(event);
+    }
+  }
+  return kept;
 }
 
 /**
