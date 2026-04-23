@@ -5,6 +5,11 @@ const DEFAULT_CONFIG = {
   BUFFER_DURATION_MINUTES: '30',
   MEETING_BLOCK_THRESHOLD_MINUTES: '120',
   CONSECUTIVE_GAP_MINUTES: '30',
+  // Comma-separated list of additional calendar IDs to process (e.g. a
+  // personal calendar overlaid on the work calendar). Events from these
+  // calendars get drive blocks written back to them, and a single generic
+  // "Busy" block on the work calendar covering event + drive time.
+  SOURCE_CALENDAR_IDS: '',
 };
 
 /**
@@ -42,12 +47,32 @@ function main() {
 
   const sourceEvents = getSourceEvents(calendar, now, endDate);
   const managedEvents = getManagedEvents(calendar, now, endDate);
-  const { drive, buffer } = categorizeManagedEvents(managedEvents);
+  const { drive, buffer, busyMirror } = categorizeManagedEvents(managedEvents);
 
-  Logger.log(`Found ${sourceEvents.length} source events, ${drive.length} drive blocks, ${buffer.length} buffer blocks`);
+  const externalCalendarIds = (config.SOURCE_CALENDAR_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  Logger.log(
+    `Found ${sourceEvents.length} source events, ${drive.length} drive blocks, ` +
+      `${buffer.length} buffer blocks, ${busyMirror.length} busy mirrors, ` +
+      `${externalCalendarIds.length} external calendars`
+  );
 
   processDriveTimeBlocks(calendar, sourceEvents, drive, config);
   processBufferBlocks(calendar, sourceEvents, buffer, config);
+
+  if (externalCalendarIds.length > 0) {
+    processExternalCalendars(
+      calendar,
+      externalCalendarIds,
+      now,
+      endDate,
+      config,
+      busyMirror
+    );
+  }
 
   Logger.log('Done.');
 }
@@ -82,7 +107,8 @@ function setup() {
 }
 
 /**
- * Remove all triggers and delete managed events.
+ * Remove all triggers and delete managed events (on both the primary
+ * calendar and any configured external calendars).
  */
 function uninstall() {
   const triggers = ScriptApp.getProjectTriggers();
@@ -93,18 +119,38 @@ function uninstall() {
     }
   }
 
-  const calendar = CalendarApp.getDefaultCalendar();
+  const config = getConfig();
   const now = new Date();
   const endDate = new Date(now.getTime() + minutesToMs(90 * 24 * 60)); // 90 days ahead
-  const managedEvents = getManagedEvents(calendar, now, endDate);
 
+  let total = deleteManagedEventsFromCalendar(CalendarApp.getDefaultCalendar(), now, endDate);
+
+  const externalCalendarIds = (config.SOURCE_CALENDAR_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const id of externalCalendarIds) {
+    try {
+      const extCal = CalendarApp.getCalendarById(id);
+      if (extCal) total += deleteManagedEventsFromCalendar(extCal, now, endDate);
+    } catch (e) {
+      Logger.log(`Failed to clean external calendar ${id}: ${e.message}`);
+    }
+  }
+
+  Logger.log(`Removed ${total} managed events. Uninstall complete.`);
+}
+
+function deleteManagedEventsFromCalendar(calendar, startDate, endDate) {
+  const managedEvents = getManagedEvents(calendar, startDate, endDate);
+  let count = 0;
   for (const event of managedEvents) {
     try {
       event.deleteEvent();
+      count++;
     } catch (e) {
       Logger.log(`Failed to delete event: ${e.message}`);
     }
   }
-
-  Logger.log(`Removed ${managedEvents.length} managed events. Uninstall complete.`);
+  return count;
 }
