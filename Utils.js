@@ -24,13 +24,19 @@ function parseTag(description) {
   }
 
   const tagSection = description.substring(description.indexOf(TAG_MARKER));
-  const lines = tagSection.split('\n');
+  // Calendar may return descriptions as HTML (e.g. <br> in place of \n).
+  // Normalize back to newlines so tag lines parse correctly.
+  const normalized = tagSection
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(p|div)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+  const lines = normalized.split('\n');
   const result = {};
 
   for (const line of lines) {
     const colonIndex = line.indexOf(':');
     if (colonIndex > 0 && line !== TAG_MARKER) {
-      result[line.substring(0, colonIndex)] = line.substring(colonIndex + 1);
+      result[line.substring(0, colonIndex)] = line.substring(colonIndex + 1).trim();
     }
   }
 
@@ -129,7 +135,7 @@ function createManagedEvent(calendar, title, startTime, endTime, description, co
   const event = calendar.createEvent(title, startTime, endTime, {
     description: description,
   });
-  event.setColor(color || '3');
+  event.setColor(color || CalendarApp.EventColor.MAUVE);
   event.removeAllReminders();
   Logger.log(`Created: ${title} (${startTime.toLocaleString()} - ${endTime.toLocaleString()})`);
   return event;
@@ -138,7 +144,7 @@ function createManagedEvent(calendar, title, startTime, endTime, description, co
 /**
  * Update an existing managed event if anything changed.
  */
-function updateManagedEvent(event, title, startTime, endTime, description, color) {
+function updateManagedEvent(event, title, startTime, endTime, description) {
   let changed = false;
 
   if (event.getTitle() !== title) {
@@ -154,10 +160,6 @@ function updateManagedEvent(event, title, startTime, endTime, description, color
   }
   if (event.getDescription() !== description) {
     event.setDescription(description);
-    changed = true;
-  }
-  if (color && event.getColor() !== color) {
-    event.setColor(color);
     changed = true;
   }
 

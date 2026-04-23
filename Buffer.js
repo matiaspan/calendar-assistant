@@ -62,9 +62,9 @@ function processBufferBlocks(calendar, sourceEvents, bufferManagedEvents, config
     const existingBefore = findManagedEvent(bufferManagedEvents, 'buffer', beforeSourceId);
 
     if (existingBefore) {
-      updateManagedEvent(existingBefore, 'Break', beforeStart, beforeEnd, beforeDescription, '2');
+      updateManagedEvent(existingBefore, 'Break', beforeStart, beforeEnd, beforeDescription, CalendarApp.EventColor.PALE_GREEN);
     } else {
-      createManagedEvent(calendar, 'Break', beforeStart, beforeEnd, beforeDescription, '2');
+      createManagedEvent(calendar, 'Break', beforeStart, beforeEnd, beforeDescription, CalendarApp.EventColor.PALE_GREEN);
     }
 
     // --- Buffer AFTER the block ---
@@ -74,9 +74,9 @@ function processBufferBlocks(calendar, sourceEvents, bufferManagedEvents, config
     const existingAfter = findManagedEvent(bufferManagedEvents, 'buffer', afterSourceId);
 
     if (existingAfter) {
-      updateManagedEvent(existingAfter, 'Break', afterStart, afterEnd, afterDescription, '2');
+      updateManagedEvent(existingAfter, 'Break', afterStart, afterEnd, afterDescription, CalendarApp.EventColor.PALE_GREEN);
     } else {
-      createManagedEvent(calendar, 'Break', afterStart, afterEnd, afterDescription, '2');
+      createManagedEvent(calendar, 'Break', afterStart, afterEnd, afterDescription, CalendarApp.EventColor.PALE_GREEN);
     }
   }
 
