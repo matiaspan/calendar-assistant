@@ -39,46 +39,59 @@ function processBufferBlocks(calendar, sourceEvents, bufferManagedEvents, config
 
   const blocks = groupConsecutiveEvents(sorted, gapMs);
   const processedSourceIds = {};
+  let allBlocksProcessedOk = true;
 
   for (const block of blocks) {
-    const blockStart = block[0].getStartTime().getTime();
-    const blockEnd = block[block.length - 1].getEndTime().getTime();
-    const blockDuration = blockEnd - blockStart;
+    try {
+      const blockStart = block[0].getStartTime().getTime();
+      const blockEnd = block[block.length - 1].getEndTime().getTime();
+      const blockDuration = blockEnd - blockStart;
 
-    if (blockDuration < thresholdMs) continue;
+      if (blockDuration < thresholdMs) continue;
 
-    const firstId = block[0].getId();
-    const lastId = block[block.length - 1].getId();
-    const beforeSourceId = `block_before_${firstId}`;
-    const afterSourceId = `block_after_${lastId}`;
+      const firstId = block[0].getId();
+      const lastId = block[block.length - 1].getId();
+      const beforeSourceId = `block_before_${firstId}`;
+      const afterSourceId = `block_after_${lastId}`;
 
-    processedSourceIds[beforeSourceId] = true;
-    processedSourceIds[afterSourceId] = true;
+      processedSourceIds[beforeSourceId] = true;
+      processedSourceIds[afterSourceId] = true;
 
-    // --- Buffer BEFORE the block ---
-    const beforeStart = new Date(blockStart - bufferMs);
-    const beforeEnd = new Date(blockStart);
-    const beforeDescription = createTag('buffer', beforeSourceId);
-    const existingBefore = findManagedEvent(bufferManagedEvents, 'buffer', beforeSourceId);
+      // --- Buffer BEFORE the block ---
+      const beforeStart = new Date(blockStart - bufferMs);
+      const beforeEnd = new Date(blockStart);
+      const beforeDescription = createTag('buffer', beforeSourceId);
+      const existingBefore = findManagedEvent(bufferManagedEvents, 'buffer', beforeSourceId);
 
-    if (existingBefore) {
-      updateManagedEvent(existingBefore, 'Break', beforeStart, beforeEnd, beforeDescription, CalendarApp.EventColor.PALE_GREEN);
-    } else {
-      createManagedEvent(calendar, 'Break', beforeStart, beforeEnd, beforeDescription, CalendarApp.EventColor.PALE_GREEN);
-    }
+      if (existingBefore) {
+        updateManagedEvent(existingBefore, 'Break', beforeStart, beforeEnd, beforeDescription, CalendarApp.EventColor.PALE_GREEN);
+      } else {
+        createManagedEvent(calendar, 'Break', beforeStart, beforeEnd, beforeDescription, CalendarApp.EventColor.PALE_GREEN);
+      }
 
-    // --- Buffer AFTER the block ---
-    const afterStart = new Date(blockEnd);
-    const afterEnd = new Date(blockEnd + bufferMs);
-    const afterDescription = createTag('buffer', afterSourceId);
-    const existingAfter = findManagedEvent(bufferManagedEvents, 'buffer', afterSourceId);
+      // --- Buffer AFTER the block ---
+      const afterStart = new Date(blockEnd);
+      const afterEnd = new Date(blockEnd + bufferMs);
+      const afterDescription = createTag('buffer', afterSourceId);
+      const existingAfter = findManagedEvent(bufferManagedEvents, 'buffer', afterSourceId);
 
-    if (existingAfter) {
-      updateManagedEvent(existingAfter, 'Break', afterStart, afterEnd, afterDescription, CalendarApp.EventColor.PALE_GREEN);
-    } else {
-      createManagedEvent(calendar, 'Break', afterStart, afterEnd, afterDescription, CalendarApp.EventColor.PALE_GREEN);
+      if (existingAfter) {
+        updateManagedEvent(existingAfter, 'Break', afterStart, afterEnd, afterDescription, CalendarApp.EventColor.PALE_GREEN);
+      } else {
+        createManagedEvent(calendar, 'Break', afterStart, afterEnd, afterDescription, CalendarApp.EventColor.PALE_GREEN);
+      }
+    } catch (e) {
+      allBlocksProcessedOk = false;
+      Logger.log(`Error processing buffer block: ${e.message}`);
     }
   }
 
-  cleanupOrphanedEvents(bufferManagedEvents, processedSourceIds, ['buffer']);
+  if (allBlocksProcessedOk) {
+    cleanupOrphanedEvents(bufferManagedEvents, processedSourceIds, ['buffer']);
+  } else {
+    Logger.log(
+      'Skipping buffer cleanup: one or more blocks errored during processing. ' +
+        'Stale buffers will be cleaned on a subsequent successful run.'
+    );
+  }
 }

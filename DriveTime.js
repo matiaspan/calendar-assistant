@@ -80,57 +80,76 @@ function processDriveTimeBlocks(calendar, sourceEvents, driveManagedEvents, conf
   const processedSourceIds = {};
   const bufferPercent = parseInt(config.DRIVE_TIME_BUFFER_PERCENT, 10);
 
+  // If any source event's processing throws (e.g. event was concurrently
+  // deleted, an API call fails mid-loop), its sourceId would NOT be added to
+  // processedSourceIds below. The cleanup at the end would then treat its
+  // drive blocks as orphaned and delete them. Skip cleanup entirely in that
+  // case — stale blocks will be reconciled on a subsequent clean run.
+  let allEventsProcessedOk = true;
+
   for (const event of eventsWithLocation) {
-    const sourceId = event.getId();
-    const location = event.getLocation();
-    const eventStart = String(event.getStartTime().getTime());
-    const eventEnd = String(event.getEndTime().getTime());
+    try {
+      const sourceId = event.getId();
+      processedSourceIds[sourceId] = true;
 
-    processedSourceIds[sourceId] = true;
+      const location = event.getLocation();
+      const eventStart = String(event.getStartTime().getTime());
+      const eventEnd = String(event.getEndTime().getTime());
 
-    // Skip if both blocks exist and the source event hasn't changed
-    if (driveBlocksMatchEvent(driveManagedEvents, sourceId, eventStart, eventEnd, location)) {
-      Logger.log(`Skipping unchanged: ${event.getTitle()}`);
-      continue;
-    }
+      // Skip if both blocks exist and the source event hasn't changed
+      if (driveBlocksMatchEvent(driveManagedEvents, sourceId, eventStart, eventEnd, location)) {
+        Logger.log(`Skipping unchanged: ${event.getTitle()}`);
+        continue;
+      }
 
-    const driveMinutes = getDriveTimeMinutes(
-      config.OFFICE_ADDRESS,
-      location,
-      event.getStartTime(),
-      bufferPercent
-    );
-    if (driveMinutes === null) continue;
+      const driveMinutes = getDriveTimeMinutes(
+        config.OFFICE_ADDRESS,
+        location,
+        event.getStartTime(),
+        bufferPercent
+      );
+      if (driveMinutes === null) continue;
 
-    const driveMs = minutesToMs(driveMinutes);
-    const metadata = { eventStart, eventEnd, location };
+      const driveMs = minutesToMs(driveMinutes);
+      const metadata = { eventStart, eventEnd, location };
 
-    // --- Drive TO block ---
-    const driveToStart = new Date(event.getStartTime().getTime() - driveMs);
-    const driveToEnd = event.getStartTime();
-    const driveToTitle = `Drive to ${event.getTitle()}`;
-    const driveToDescription = createTag('drive-to', sourceId, metadata);
-    const existingDriveTo = findManagedEvent(driveManagedEvents, 'drive-to', sourceId);
+      // --- Drive TO block ---
+      const driveToStart = new Date(event.getStartTime().getTime() - driveMs);
+      const driveToEnd = event.getStartTime();
+      const driveToTitle = `Drive to ${event.getTitle()}`;
+      const driveToDescription = createTag('drive-to', sourceId, metadata);
+      const existingDriveTo = findManagedEvent(driveManagedEvents, 'drive-to', sourceId);
 
-    if (existingDriveTo) {
-      updateManagedEvent(existingDriveTo, driveToTitle, driveToStart, driveToEnd, driveToDescription);
-    } else {
-      createManagedEvent(calendar, driveToTitle, driveToStart, driveToEnd, driveToDescription);
-    }
+      if (existingDriveTo) {
+        updateManagedEvent(existingDriveTo, driveToTitle, driveToStart, driveToEnd, driveToDescription);
+      } else {
+        createManagedEvent(calendar, driveToTitle, driveToStart, driveToEnd, driveToDescription);
+      }
 
-    // --- Drive FROM block ---
-    const driveFromStart = event.getEndTime();
-    const driveFromEnd = new Date(event.getEndTime().getTime() + driveMs);
-    const driveFromTitle = `Drive from ${event.getTitle()}`;
-    const driveFromDescription = createTag('drive-from', sourceId, metadata);
-    const existingDriveFrom = findManagedEvent(driveManagedEvents, 'drive-from', sourceId);
+      // --- Drive FROM block ---
+      const driveFromStart = event.getEndTime();
+      const driveFromEnd = new Date(event.getEndTime().getTime() + driveMs);
+      const driveFromTitle = `Drive from ${event.getTitle()}`;
+      const driveFromDescription = createTag('drive-from', sourceId, metadata);
+      const existingDriveFrom = findManagedEvent(driveManagedEvents, 'drive-from', sourceId);
 
-    if (existingDriveFrom) {
-      updateManagedEvent(existingDriveFrom, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
-    } else {
-      createManagedEvent(calendar, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
+      if (existingDriveFrom) {
+        updateManagedEvent(existingDriveFrom, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
+      } else {
+        createManagedEvent(calendar, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
+      }
+    } catch (e) {
+      allEventsProcessedOk = false;
+      Logger.log(`Error processing drive blocks for event: ${e.message}`);
     }
   }
 
-  cleanupOrphanedEvents(driveManagedEvents, processedSourceIds, ['drive-to', 'drive-from']);
+  if (allEventsProcessedOk) {
+    cleanupOrphanedEvents(driveManagedEvents, processedSourceIds, ['drive-to', 'drive-from']);
+  } else {
+    Logger.log(
+      'Skipping drive-block cleanup: one or more events errored during processing. ' +
+        'Stale blocks will be cleaned on a subsequent successful run.'
+    );
+  }
 }
