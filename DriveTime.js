@@ -113,7 +113,7 @@ function processDriveTimeBlocks(calendar, sourceEvents, driveManagedEvents, conf
     const existingDriveTo = findManagedEvent(driveManagedEvents, 'drive-to', sourceId);
 
     if (existingDriveTo) {
-      updateManagedEvent(existingDriveTo, driveToTitle, driveToStart, driveToEnd, driveToDescription, '3');
+      updateManagedEvent(existingDriveTo, driveToTitle, driveToStart, driveToEnd, driveToDescription);
     } else {
       createManagedEvent(calendar, driveToTitle, driveToStart, driveToEnd, driveToDescription);
     }
@@ -126,7 +126,7 @@ function processDriveTimeBlocks(calendar, sourceEvents, driveManagedEvents, conf
     const existingDriveFrom = findManagedEvent(driveManagedEvents, 'drive-from', sourceId);
 
     if (existingDriveFrom) {
-      updateManagedEvent(existingDriveFrom, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription, '3');
+      updateManagedEvent(existingDriveFrom, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
     } else {
       createManagedEvent(calendar, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
     }
