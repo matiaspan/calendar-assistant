@@ -50,6 +50,23 @@ function isManagedEvent(event) {
   return parseTag(event.getDescription()) !== null;
 }
 
+/**
+ * Unique per-instance ID for a calendar event.
+ *
+ * event.getId() returns the iCalUID, which is the SAME across every
+ * instance of a recurring event. Using it alone as a managed-event
+ * source key causes every instance of a recurring series to share one
+ * drive block / busy mirror — each iteration of the main loop overwrites
+ * the previous instance's block, so only the last instance ends up with
+ * any managed blocks at all.
+ *
+ * Appending the instance start time makes each occurrence addressable
+ * on its own.
+ */
+function getEventInstanceId(event) {
+  return event.getId() + '_' + event.getStartTime().getTime();
+}
+
 // ---------------------------------------------------------------------------
 // Event filtering
 // ---------------------------------------------------------------------------

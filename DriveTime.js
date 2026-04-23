@@ -89,7 +89,7 @@ function processDriveTimeBlocks(calendar, sourceEvents, driveManagedEvents, conf
 
   for (const event of eventsWithLocation) {
     try {
-      const sourceId = event.getId();
+      const sourceId = getEventInstanceId(event);
       processedSourceIds[sourceId] = true;
 
       const location = event.getLocation();

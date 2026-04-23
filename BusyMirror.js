@@ -84,7 +84,7 @@ function processExternalCalendars(
     // Step 2: expanded "Busy" mirror on the work calendar.
     for (const event of externalEvents) {
       try {
-        const sourceId = event.getId();
+        const sourceId = getEventInstanceId(event);
         processedMirrorSourceIds[sourceId] = true;
 
         const eventStart = event.getStartTime();

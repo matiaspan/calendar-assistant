@@ -49,8 +49,8 @@ function processBufferBlocks(calendar, sourceEvents, bufferManagedEvents, config
 
       if (blockDuration < thresholdMs) continue;
 
-      const firstId = block[0].getId();
-      const lastId = block[block.length - 1].getId();
+      const firstId = getEventInstanceId(block[0]);
+      const lastId = getEventInstanceId(block[block.length - 1]);
       const beforeSourceId = `block_before_${firstId}`;
       const afterSourceId = `block_after_${lastId}`;
 
