@@ -105,6 +105,19 @@ function runMain() {
     );
   }
 
+  // Purge fully-past managed events on every run so drive/busy blocks
+  // tidy themselves up after an appointment ends. 30 days back is plenty
+  // — anything older is irrelevant for the assistant's own bookkeeping.
+  purgePastManagedEvents(calendar, now, 30);
+  for (const id of externalCalendarIds) {
+    try {
+      const extCal = CalendarApp.getCalendarById(id);
+      if (extCal) purgePastManagedEvents(extCal, now, 30);
+    } catch (e) {
+      Logger.log(`Failed to purge past events on ${id}: ${e.message}`);
+    }
+  }
+
   Logger.log('Done.');
 }
 

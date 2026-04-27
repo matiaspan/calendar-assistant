@@ -113,17 +113,25 @@ function processDriveTimeBlocks(calendar, sourceEvents, driveManagedEvents, conf
       const driveMs = minutesToMs(driveMinutes);
       const metadata = { eventStart, eventEnd, location };
 
+      const nowMs = Date.now();
+
       // --- Drive TO block ---
+      // Skip create/update if it's fully in the past. Otherwise, when an
+      // event is mid-flight (already started), the past drive-to falls
+      // outside the [now, endDate] query window, findManagedEvent returns
+      // null, and we'd create a fresh duplicate in the past on every run.
       const driveToStart = new Date(event.getStartTime().getTime() - driveMs);
       const driveToEnd = event.getStartTime();
       const driveToTitle = `Drive to ${event.getTitle()}`;
       const driveToDescription = createTag('drive-to', sourceId, metadata);
       const existingDriveTo = findManagedEvent(driveManagedEvents, 'drive-to', sourceId);
 
-      if (existingDriveTo) {
-        updateManagedEvent(existingDriveTo, driveToTitle, driveToStart, driveToEnd, driveToDescription);
-      } else {
-        createManagedEvent(calendar, driveToTitle, driveToStart, driveToEnd, driveToDescription);
+      if (driveToEnd.getTime() > nowMs) {
+        if (existingDriveTo) {
+          updateManagedEvent(existingDriveTo, driveToTitle, driveToStart, driveToEnd, driveToDescription);
+        } else {
+          createManagedEvent(calendar, driveToTitle, driveToStart, driveToEnd, driveToDescription);
+        }
       }
 
       // --- Drive FROM block ---
@@ -133,10 +141,12 @@ function processDriveTimeBlocks(calendar, sourceEvents, driveManagedEvents, conf
       const driveFromDescription = createTag('drive-from', sourceId, metadata);
       const existingDriveFrom = findManagedEvent(driveManagedEvents, 'drive-from', sourceId);
 
-      if (existingDriveFrom) {
-        updateManagedEvent(existingDriveFrom, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
-      } else {
-        createManagedEvent(calendar, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
+      if (driveFromEnd.getTime() > nowMs) {
+        if (existingDriveFrom) {
+          updateManagedEvent(existingDriveFrom, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
+        } else {
+          createManagedEvent(calendar, driveFromTitle, driveFromStart, driveFromEnd, driveFromDescription);
+        }
       }
     } catch (e) {
       allEventsProcessedOk = false;
