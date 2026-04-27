@@ -238,6 +238,41 @@ function dedupeManagedEvents(managedEvents, types) {
 }
 
 /**
+ * Delete managed events that are entirely in the past.
+ *
+ * Once a calendar appointment has finished, its drive blocks and busy
+ * mirror are no longer useful — and a "Drive to" block specifically
+ * becomes past as soon as the source event starts, which puts it outside
+ * the normal [now, endDate] query window where the orphan-cleanup logic
+ * operates. Without this purge those past blocks would persist forever
+ * and accumulate as duplicates.
+ *
+ * Looks `lookbackDays` days back; nothing in this script ever needs to
+ * see fully-past managed events.
+ */
+function purgePastManagedEvents(calendar, now, lookbackDays) {
+  const lookback = new Date(now.getTime() - minutesToMs(lookbackDays * 24 * 60));
+  let count = 0;
+  try {
+    const events = calendar.getEvents(lookback, now);
+    for (const event of events) {
+      try {
+        if (event.getEndTime().getTime() < now.getTime() && isManagedEvent(event)) {
+          Logger.log(`Purging past managed event: ${event.getTitle()}`);
+          event.deleteEvent();
+          count++;
+        }
+      } catch (e) {
+        Logger.log(`Failed to delete past managed event: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    Logger.log(`Failed to scan past events on ${calendar.getName()}: ${e.message}`);
+  }
+  return count;
+}
+
+/**
  * Delete managed events whose source no longer exists.
  */
 function cleanupOrphanedEvents(managedEvents, processedSourceIds, types) {

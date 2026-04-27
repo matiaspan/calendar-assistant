@@ -118,17 +118,23 @@ function processExternalCalendars(
         const description = createTag('busy-mirror', sourceId, metadata);
         const existing = findManagedEvent(busyMirrorManagedEvents, 'busy-mirror', sourceId);
 
-        if (existing) {
-          updateManagedEvent(existing, 'Busy', mirrorStart, mirrorEnd, description, mirrorColor);
-        } else {
-          createManagedEvent(
-            workCalendar,
-            'Busy',
-            mirrorStart,
-            mirrorEnd,
-            description,
-            mirrorColor
-          );
+        // Skip create/update if the mirror window is entirely past — same
+        // reasoning as for drive blocks: a past mirror falls outside the
+        // [now, endDate] managed-events query, so we'd otherwise create a
+        // fresh duplicate on every run for any event that has already ended.
+        if (mirrorEnd.getTime() > Date.now()) {
+          if (existing) {
+            updateManagedEvent(existing, 'Busy', mirrorStart, mirrorEnd, description, mirrorColor);
+          } else {
+            createManagedEvent(
+              workCalendar,
+              'Busy',
+              mirrorStart,
+              mirrorEnd,
+              description,
+              mirrorColor
+            );
+          }
         }
       } catch (e) {
         Logger.log(`Error mirroring external event: ${e.message}`);
